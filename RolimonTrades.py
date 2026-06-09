@@ -1,11 +1,14 @@
+import argparse
+import json
 import requests
 import traceback
+import os
 
 # ── Config ──────────────────────────────────────────────────────
 
-confURL = 'https://api.rolimons.com/tradeads/v1/getrecentads'
-rolimonURL = 'https://www.rolimons.com/itemapi/itemdetails'
-adAmount = 10
+cacheFilePath = 'Cache.json'
+defaultAdAmount = 10
+clearCacheOnRun = False
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -14,6 +17,12 @@ headers = {
     'Referer': 'https://www.rolimons.com/',
     'Origin': 'https://www.rolimons.com',
 }
+
+# ── Globals ─────────────────────────────────────────────────────
+
+confURL = 'https://api.rolimons.com/tradeads/v1/getrecentads'
+rolimonURL = 'https://www.rolimons.com/itemapi/itemdetails'
+adAmount = 0
 
 # ── Colors ──────────────────────────────────────────────────────
 
@@ -27,7 +36,7 @@ CYAN        = '\033[36m'
 BOLD        = '\033[1m'
 RESET       = '\033[0m'
 
-# ── Key ─────────────────────────────────────────────────────────
+# ── Keys ────────────────────────────────────────────────────────
 
 tags = {
     1: 'Demand',
@@ -67,7 +76,6 @@ def rolimonLookUp(item_id):
     else:
         roblox = robloxLookUp(item_id)
         if roblox:
-            print(roblox['name'])
             name = roblox['name']
             price = roblox['price']
             rap = roblox['rap']
@@ -85,35 +93,71 @@ def rolimonLookUp(item_id):
     return item
 
 
-roblox_cache = {}
-
 def robloxLookUp(item_id):
-    if str(item_id) in roblox_cache:
-        return roblox_cache[str(item_id)]
+    #Search Cache.json for item
+    robloxCache = jsonRead(cacheFilePath)
+    if str(item_id) in robloxCache['items']:
+        return robloxCache['items'][str(item_id)]
     
+    #Roblox API Call
     try:
-        response = requests.get(f'https://economy.roblox.com/v2/assets/{item_id}/details', headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            print(data)
-            result = {
-                'name': data['Name'],
-                'price': data['CollectiblesItemDetails'][0] or 0,
-                'rap': 0
-            }
+        response = requests.get(f'https://catalog.roblox.com/v1/catalog/items/{item_id}/details?itemType=asset', headers=headers, timeout=10)
+        if response.status_code != 200: print(response.text, response.status_code)
 
-            roblox_cache[str(item_id)] = result
-            return result
-    except Exception:
-        pass
+        #print(response.json()) 
+        data = response.json()
+
+        result = {
+            'id': data['id'],
+            'name': data['name'],
+            'price': data['lowestPrice'] or 0,
+            'rap': 0
+        }
+
+        tempCache = jsonRead(cacheFilePath)
+        if data['id'] not in tempCache['items']:
+            tempCache['items'][data['id']] = result
+            jsonWrite(cacheFilePath, tempCache)
+
+        return result
+
+    except Exception as e:
+        print(f'Error: {e}')
     return None
     
 
 # ── Functions ───────────────────────────────────────────────────
 
 
+def jsonRead(filepath):
+    if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    return {"items": {}}
+
+
+def jsonWrite(filepath, data):
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=4)
+
+
+def getCacheDefault():
+    return {
+        "itemCount": 0,
+        "items": {
+            "id": {
+                "id": 123456789,
+                "name": "name",
+                "price": 0,
+                "rap": 0
+            }
+        }
+    }
+
+
 def colored(text, color):
     return (f'{color}{text}{RESET}')
+
 
 def apiRequest():
     session = requests.Session()
@@ -126,7 +170,6 @@ def apiRequest():
         parseData(response)
     else:
         print(f"Request failed, status code: {response.status_code}")
-
 
 
 def parseData(response):
@@ -210,8 +253,23 @@ def parseData(response):
         print()
 
         print(colored(f'DIFFERENCES', MAGENTA))
-        print(colored(f'    Value Diff: {valueDiff}', MAGENTA))
-        print(colored(f'    Rap Diff: {rapDiff}', MAGENTA))
+
+        #Value Diff
+        if valueDiff == 'N/A':
+            print(colored(f'    Value Diff: {valueDiff}', MAGENTA))
+        elif int(valueDiff) > 0:
+            print(colored(f'    Value Diff: {valueDiff}', GREEN))
+        else:
+            print(colored(f'    Value Diff: {valueDiff}', RED))
+        
+        #Rap Diff
+        if rapDiff == 'N/A':
+            print(colored(f'    Rap Diff: {rapDiff}', MAGENTA))
+        elif int(rapDiff) > 0:
+            print(colored(f'    Rap Diff: {rapDiff}', GREEN))
+        else:
+            print(colored(f'    Rap Diff: {rapDiff}', RED))
+        
         print()
         print(f'─────────────────────────────────────────────────')
 
@@ -220,7 +278,20 @@ def parseData(response):
 
 
 def main():
-    
+    parser = argparse.ArgumentParser(description='Rolimon Recent Trade Ad Scanner')
+
+    parser.add_argument('--amount', type=int, default=defaultAdAmount, help='Number of trades ads to be fetched')
+    parser.add_argument('--clear-cache', action='store_true', help='Clear the cache')
+    args = parser.parse_args()
+
+    #CHECK ARGS
+    global adAmount
+    adAmount = args.amount
+
+    if args.clear_cache or clearCacheOnRun:
+        jsonWrite(cacheFilePath, getCacheDefault())
+        print(colored('Cache Cleared!', MAGENTA))
+
     try:
         print('Loading Items Into Cache...')
         loadRolimonCache()
