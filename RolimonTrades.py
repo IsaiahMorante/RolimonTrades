@@ -7,7 +7,7 @@ import os
 # ── Config ──────────────────────────────────────────────────────
 
 cacheFilePath = 'Cache.json'
-defaultAdAmount = 10
+defaultAdAmount = 5
 clearCacheOnRun = False
 
 headers = {
@@ -61,7 +61,7 @@ def loadRolimonCache():
 
     if response.status_code == 200:
         rolimon_cache.update(response.json()['items'])
-        print(f'Loaded {len(rolimon_cache)} items into cache')
+        print(f'Loaded {YELLOW}{len(rolimon_cache)}{RESET} items into cache')
     else:
         print(f'Failed to cache items: {response.status_code}')
 
@@ -114,8 +114,10 @@ def robloxLookUp(item_id):
             'rap': 0
         }
 
+        #Attempt to cache
         tempCache = jsonRead(cacheFilePath)
         if data['id'] not in tempCache['items']:
+            tempCache['itemCount'] += 1
             tempCache['items'][data['id']] = result
             jsonWrite(cacheFilePath, tempCache)
 
@@ -139,6 +141,11 @@ def jsonRead(filepath):
 def jsonWrite(filepath, data):
     with open(filepath, 'w') as f:
         json.dump(data, f, indent=4)
+
+
+def getCachedItemCount():
+    cache = jsonRead(cacheFilePath)
+    return cache['itemCount']
 
 
 def getCacheDefault():
@@ -278,10 +285,12 @@ def parseData(response):
 
 
 def main():
+    print(f'─────────────────────────────────────────────────')
     parser = argparse.ArgumentParser(description='Rolimon Recent Trade Ad Scanner')
 
     parser.add_argument('--amount', type=int, default=defaultAdAmount, help='Number of trades ads to be fetched')
     parser.add_argument('--clear-cache', action='store_true', help='Clear the cache')
+    parser.add_argument('--cache-count', action='store_true', help='Returns the amount of items cached')
     args = parser.parse_args()
 
     #CHECK ARGS
@@ -292,10 +301,16 @@ def main():
         jsonWrite(cacheFilePath, getCacheDefault())
         print(colored('Cache Cleared!', MAGENTA))
 
+    if args.cache_count:
+        print()
+        print(colored(f'Cached Items: {getCachedItemCount()}', YELLOW))
+        print()
+
     try:
         print('Loading Items Into Cache...')
         loadRolimonCache()
         print('Attempting To Fetch Most Recent Trade Ads...')
+        print()
         apiRequest()
     except Exception as e:
         print(f'Error: {e}')
